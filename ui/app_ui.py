@@ -10,6 +10,8 @@ import queue # For thread-safe UI updates
 # from database.db_manager import DatabaseManager # Will be used when integrated
 # from ollama_api.ollama_client import OllamaClient # Will be used when integrated
 
+import sv_ttk # For dark theme
+
 class AppUI:
     def __init__(self, root, db_manager, ollama_client):
         self.root = root
@@ -19,12 +21,15 @@ class AppUI:
         self.root.title("Ollama Chat Client")
         self.root.geometry("1000x700")
 
+        # Apply sv-ttk theme
+        sv_ttk.set_theme("dark") # Or "light"
+
         self.current_conversation_id = None
         self.current_model = tk.StringVar()
         self.available_models = []
         self.ui_update_queue = queue.Queue() # Queue for thread-safe UI updates
 
-        self._setup_styles()
+        self._setup_styles() # Custom styles might override or complement sv_ttk
         self._setup_ui()
 
         self.load_conversations()
@@ -51,13 +56,20 @@ class AppUI:
 
     def _setup_styles(self):
         self.style = ttk.Style()
-        self.style.theme_use('clam') # More modern theme
-        self.style.configure("User.TLabel", foreground="blue", padding=(0, 2, 0, 2))
-        self.style.configure("Assistant.TLabel", foreground="green", padding=(0, 2, 0, 2))
+        # self.style.theme_use('clam') # sv_ttk handles the base theme
+
+        # Define custom styles that complement the dark theme
+        # Use lighter colors for text on a dark background
+        self.style.configure("User.TLabel", foreground="#70AEEF", padding=(0, 2, 0, 2)) # Light Blue
+        self.style.configure("Assistant.TLabel", foreground="#A0EFA0", padding=(0, 2, 0, 2)) # Light Green
         self.style.configure("Timestamp.TLabel", foreground="grey", font=('TkDefaultFont', 7), padding=(0,0,0,2))
-        self.style.configure("Error.TLabel", foreground="red")
+        self.style.configure("Error.TLabel", foreground="#FF8080") # Light Red
         self.style.configure("Status.TLabel", padding=5)
-        self.style.configure("Selected.TFrame", background="#e0e0e0") # For selected conversation
+
+        # Selected.TFrame might not be needed if sv_ttk handles listbox selection well,
+        # or it might need a dark-theme appropriate color.
+        # For now, let's comment it out or use a color from sv-ttk if available.
+        # self.style.configure("Selected.TFrame", background="#4c4c4c") # Example dark selection
 
     def _setup_ui(self):
         # Main PanedWindow for resizable sidebar
@@ -112,10 +124,16 @@ class AppUI:
         self.refresh_models_button = ttk.Button(self.model_frame, text="Refresh Models", command=self.load_models_into_dropdown)
         self.refresh_models_button.pack(side=tk.LEFT, padx=(5,0))
 
-        # Chat Messages Display (ScrolledText for rich text and images later if needed)
-        # Using a Frame with Labels for now for simpler message structure and editing.
-        self.chat_messages_canvas = tk.Canvas(self.chat_area_frame, borderwidth=0, background="#ffffff")
-        self.chat_messages_frame = ttk.Frame(self.chat_messages_canvas, style="Messages.TFrame") # Inner frame
+        # Chat Messages Display
+        # The canvas background should ideally be themed by sv_ttk.
+        # If not, we might need to fetch a color from the style.
+        # For now, let sv_ttk handle it or it will use its default.
+        self.chat_messages_canvas = tk.Canvas(self.chat_area_frame, borderwidth=0)
+        # Example of trying to get a theme color:
+        # bg_color = self.style.lookup('TFrame', 'background') # Get default frame background
+        # self.chat_messages_canvas.configure(background=bg_color)
+
+        self.chat_messages_frame = ttk.Frame(self.chat_messages_canvas, style="Messages.TFrame")
         self.chat_v_scrollbar = ttk.Scrollbar(self.chat_area_frame, orient="vertical", command=self.chat_messages_canvas.yview)
         self.chat_messages_canvas.configure(yscrollcommand=self.chat_v_scrollbar.set)
 
@@ -139,6 +157,25 @@ class AppUI:
         self.message_input.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0,5))
         self.message_input.bind("<Return>", self.send_message_on_enter) # Shift+Enter for newline
         self.message_input.bind("<Shift-Return>", self.insert_newline_in_input)
+
+        # Apply dark theme to ScrolledText's internal Text widget
+        try:
+            # These colors should ideally be from the theme, e.g. self.style.lookup('TEntry', 'fieldbackground') or similar
+            st_bg_color = "#2B2B2B" # Example dark background
+            st_fg_color = "#D3D3D3" # Example light foreground
+            st_insert_color = self.style.lookup('TEntry', 'insertcolor', default=st_fg_color) # Get themed cursor color if possible
+
+            self.message_input.configure(
+                background=st_bg_color,
+                foreground=st_fg_color,
+                insertbackground=st_insert_color,
+                relief=tk.FLAT # Make relief flatter to match modern themes
+            )
+            # Configure selection colors if needed (though sv-ttk might handle these)
+            # self.message_input.tag_configure("sel", background="...", foreground="...")
+        except tk.TclError as e:
+            print(f"Warning: Could not apply all dark theme styles to ScrolledText input: {e}")
+
 
         self.send_button = ttk.Button(self.input_frame, text="Send", command=self.send_message)
         self.send_button.pack(side=tk.RIGHT)
@@ -181,9 +218,21 @@ class AppUI:
         # Role and Content Label (combined for easier layout)
         # Using Text widget for selectable text
         text_content = tk.Text(msg_frame, wrap=tk.WORD, height=1, borderwidth=0, relief="flat", padx=0, pady=0)
-        text_content.tag_config("role_user", foreground="blue", font=('TkDefaultFont', 10, 'bold'))
-        text_content.tag_config("role_assistant", foreground="green", font=('TkDefaultFont', 10, 'bold'))
-        text_content.tag_config("content", foreground="black", font=('TkDefaultFont', 10))
+
+        # Dark theme adjustments for tk.Text widget
+        # Ideally, these colors would be derived from the sv_ttk theme if possible.
+        text_bg_color = "#2B2B2B"  # Example dark background for text areas
+        text_fg_color = "#D3D3D3"  # Example light foreground for text
+
+        text_content.config(background=text_bg_color, insertbackground=text_fg_color) # Set background & cursor color
+
+        # Use theme-appropriate colors for roles (already defined in _setup_styles for Labels, reuse for text)
+        user_role_color = self.style.lookup("User.TLabel", "foreground")
+        assistant_role_color = self.style.lookup("Assistant.TLabel", "foreground")
+
+        text_content.tag_config("role_user", foreground=user_role_color, font=('TkDefaultFont', 10, 'bold'))
+        text_content.tag_config("role_assistant", foreground=assistant_role_color, font=('TkDefaultFont', 10, 'bold'))
+        text_content.tag_config("content", foreground=text_fg_color, font=('TkDefaultFont', 10))
 
         text_content.insert(tk.END, f"{role.capitalize()}: ", f"role_{role.lower()}")
         text_content.insert(tk.END, content, "content")

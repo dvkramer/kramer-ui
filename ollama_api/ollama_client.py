@@ -13,11 +13,12 @@ class OllamaClient:
             response = requests.request(method, url, **kwargs)
             response.raise_for_status()  # Raise an exception for HTTP errors
             if response.content:
-                # Check if response is JSON, otherwise return text
-                if response.headers.get('Content-Type') == 'application/json':
+                content_type = response.headers.get('Content-Type', '').lower()
+                if 'application/json' in content_type:
                     return response.json()
                 # Handle cases like /api/delete which might not return JSON on success
                 # or streaming endpoints before JSON parsing per line.
+                # If not JSON, return as text. This might be an error page or unexpected format.
                 return response.text
             return None # For successful requests with no content (e.g., DELETE)
         except requests.exceptions.RequestException as e:

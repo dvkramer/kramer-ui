@@ -1,4 +1,5 @@
 requests
+sv_ttk
 # PyInstaller will be used for packaging, but not as a library import
 # tkinter is part of the standard library
 # sqlite3 is part of the standard library
