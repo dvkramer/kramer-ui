@@ -1,0 +1,27 @@
+{
+  "name": "kramer-ui-for-ollama",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/node": "^24.0.10",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "concurrently": "^9.2.0",
+    "electron": "^37.2.0",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.2"
+  },
+  "dependencies": {
+    "dexie": "^4.0.11",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  }
+}
