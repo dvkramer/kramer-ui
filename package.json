@@ -39,10 +39,11 @@
     "electron-builder": "^24.6.4",
     "html-webpack-plugin": "^5.5.3",
     "nodemon": "^3.0.2",
-    "postcss": "^8.4.31", // Already here, ensure it's >= Tailwind's requirement
-    "postcss-loader": "^7.3.3", // Already here
-    "autoprefixer": "^10.4.16", // Add autoprefixer
-    "tailwindcss": "^3.3.5", // Already here, ensure version
+    "postcss": "^8.4.31",
+    "postcss-loader": "^7.3.3",
+    "autoprefixer": "^10.4.16",
+    "style-loader": "^3.3.1",
+    "tailwindcss": "^3.3.5",
     "ts-loader": "^9.5.0",
     "typescript": "^5.2.2",
     "webpack": "^5.89.0",
@@ -60,8 +61,7 @@
     "files": [
       "dist/**/*",
       "node_modules/**/*",
-      "package.json",
-      "index.html"
+      "package.json"
     ],
     "directories": {
       "buildResources": "assets",

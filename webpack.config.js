@@ -29,28 +29,6 @@ module.exports = (env, argv) => {
       ignored: /node_modules|dist/,
     },
   };
-  mode: process.env.NODE_ENV || 'development',
-  devtool: process.env.NODE_ENV === 'production' ? false : 'source-map',
-  resolve: {
-    extensions: ['.ts', '.tsx', '.js', '.jsx', '.json'],
-  },
-  module: {
-    rules: [
-      {
-        test: /\.(ts|tsx)$/,
-        exclude: /node_modules/,
-        use: 'ts-loader',
-      },
-      {
-        test: /\.css$/,
-        use: ['style-loader', 'css-loader', 'postcss-loader'],
-      },
-    ],
-  },
-  watchOptions: {
-    ignored: /node_modules|dist/,
-  },
-};
 
 const mainConfig = {
   ...commonConfig,
