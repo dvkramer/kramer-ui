@@ -481,6 +481,8 @@ class AppUI:
             title = user_content.split('\n')[0][:50] # First 50 chars of first line as title
             try:
                 temp_conv_id = self.db_manager.create_conversation(title=title, model=selected_model)
+                if not isinstance(temp_conv_id, int) or temp_conv_id <= 0:
+                    raise Exception(f"Failed to create a valid conversation ID: {temp_conv_id}")
                 self.current_conversation_id = temp_conv_id # Set it as current
                 self.load_conversations() # Refresh list
                 # Auto-select the new conversation in the listbox
@@ -491,18 +493,28 @@ class AppUI:
                         break
             except Exception as e:
                 self.update_status_bar(f"Error creating new conversation: {e}", is_error=True)
-                messagebox.showerror("DB Error", f"Could not create conversation: {e}")
+                messagebox.showerror("DB Error", f"Could not create new conversation: {type(e).__name__}: {e}")
                 self._enable_input()
                 return
+
+        # Before adding user message, ensure temp_conv_id is valid
+        if not isinstance(temp_conv_id, int) or temp_conv_id <= 0:
+            self.update_status_bar("Cannot save message: Invalid conversation state.", is_error=True)
+            messagebox.showerror("DB Error", "Cannot save message due to an invalid conversation state. Try starting a new conversation.")
+            self._enable_input()
+            return
 
         # Add user message to DB and display
         try:
             user_msg_id = self.db_manager.add_message(temp_conv_id, "user", user_content)
+            if not isinstance(user_msg_id, int) or user_msg_id <= 0:
+                 raise Exception(f"Failed to save message, received invalid message ID: {user_msg_id}")
             self._add_message_to_display(user_msg_id, "user", user_content, datetime.datetime.now())
             self.message_input.delete("1.0", tk.END) # Clear input field
         except Exception as e:
             self.update_status_bar(f"Error saving user message: {e}", is_error=True)
-            messagebox.showerror("DB Error", f"Could not save your message: {e}")
+            # Show type of exception for better debugging
+            messagebox.showerror("DB Error", f"Could not save your message: {type(e).__name__}: {e}")
             self._enable_input()
             return
 

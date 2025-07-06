@@ -71,7 +71,10 @@ class DatabaseManager:
             VALUES (?, ?, ?, ?)
             """, (title, model, now, now))
             self.conn.commit()
-            return self.cursor.lastrowid
+            new_id = self.cursor.lastrowid
+            if new_id is None or new_id == 0:
+                raise sqlite3.OperationalError("Failed to retrieve a valid ID after inserting new conversation. lastrowid was None or 0.")
+            return new_id
 
     def add_message(self, conversation_id: int, role: str, content: str) -> int:
         """
@@ -83,6 +86,8 @@ class DatabaseManager:
         Returns:
             The ID of the newly added message.
         """
+        if conversation_id is None or not isinstance(conversation_id, int) or conversation_id <= 0:
+            raise ValueError(f"Invalid conversation_id provided to add_message: {conversation_id}")
         now = datetime.datetime.now()
         with self:
             # Add message
@@ -100,6 +105,8 @@ class DatabaseManager:
             """, (now, conversation_id))
 
             self.conn.commit()
+            if message_id is None or message_id == 0:
+                 raise sqlite3.OperationalError("Failed to retrieve a valid ID after inserting new message. lastrowid was None or 0.")
             return message_id
 
     def get_conversations(self) -> list[sqlite3.Row]:
