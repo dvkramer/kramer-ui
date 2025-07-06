@@ -248,6 +248,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
       {/* Messages Area */}
       <div className="flex-grow p-4 space-y-4 overflow-y-auto">
+        {error && (
+          <div className="bg-red-800 border border-red-700 text-white px-4 py-3 rounded-lg relative mb-4" role="alert">
+            <strong className="font-bold">Error:</strong>
+            <span className="block sm:inline ml-2">{error}</span>
+            <button onClick={() => setError(null)} className="absolute top-0 bottom-0 right-0 px-4 py-3 text-red-200 hover:text-white">
+              <span className="text-2xl">&times;</span>
+            </button>
+          </div>
+        )}
         {messages.map((msg) => (
           <MessageItem key={msg.id} message={msg} onEdit={handleEditMessage} />
         ))}
@@ -268,7 +277,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       </div>
 
       {/* Input Area */}
-      {error && <p className="p-4 text-red-400 text-sm">{error}</p>}
       <div className="p-4 border-t border-gray-700">
         <div className="flex items-center bg-gray-700 rounded-lg p-1">
           <textarea

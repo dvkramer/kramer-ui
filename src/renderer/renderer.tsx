@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.css'; // Tailwind CSS
-import { ollamaApi, OllamaModel } from './services/OllamaApi'; // Assuming OllamaApi.ts is in services
+import { ollamaApi, OllamaModel } from './services/OllamaApi';
 import ConversationListSidebar from './components/ConversationListSidebar';
 import ChatWindow from './components/ChatWindow';
 import ModelSelector from './components/ModelSelector';
-import { IConversation, db } from './db'; // Dexie DB
+import { IConversation, db } from './db';
+import ErrorBoundary from './components/ErrorBoundary'; // Import ErrorBoundary
 
 // Define the electronAPI property on the Window interface
 declare global {
@@ -19,7 +20,8 @@ declare global {
 
 const App: React.FC = () => {
   const [ollamaConnected, setOllamaConnected] = useState<boolean>(false);
-  const [connectionStatusMessage, setConnectionStatusMessage] = useState<string>('Connecting to Ollama...');
+  const [connectionStatusMessage, setConnectionStatusMessage] = useState<string>('Initializing...');
+  const [modelStatusMessage, setModelStatusMessage] = useState<string>('');
   const [availableModels, setAvailableModels] = useState<OllamaModel[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<IConversation | null>(null);
   const [conversations, setConversations] = useState<IConversation[]>([]);
@@ -28,34 +30,43 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const checkConnectionAndFetchData = async () => {
+      setConnectionStatusMessage('Connecting to Ollama...');
       const connected = await ollamaApi.checkConnection();
       setOllamaConnected(connected);
+
       if (connected) {
-        setConnectionStatusMessage('Connected to Ollama');
+        setConnectionStatusMessage('Ollama connected.');
+        setModelStatusMessage('Fetching models...');
         try {
           const modelsResponse = await ollamaApi.listModels();
-          setAvailableModels(modelsResponse.models || []);
-          if (modelsResponse.models && modelsResponse.models.length > 0) {
-            // Set a default model if none is set, or from local storage later
-            if(!currentGlobalModel) setCurrentGlobalModel(modelsResponse.models[0].name);
+          const fetchedModels = modelsResponse.models || [];
+          setAvailableModels(fetchedModels);
+          if (fetchedModels.length > 0) {
+            if (!currentGlobalModel && fetchedModels[0]?.name) {
+              setCurrentGlobalModel(fetchedModels[0].name);
+            }
+            setModelStatusMessage(`${fetchedModels.length} model(s) loaded.`);
           } else {
-             setConnectionStatusMessage('Connected to Ollama, but no models found. Pull a model to start.');
+            setModelStatusMessage('No local models found. Pull a model to start.');
           }
-        } catch (error) {
+        } catch (error: any) {
           console.error('Failed to fetch models:', error);
-          setConnectionStatusMessage('Error fetching models from Ollama.');
+          setModelStatusMessage(`Error fetching models: ${error.error || error.message}`);
           setAvailableModels([]);
         }
         loadConversations();
       } else {
-        setConnectionStatusMessage('Failed to connect to Ollama. Ensure Ollama is running.');
+        setConnectionStatusMessage('Ollama disconnected. Ensure Ollama is running.');
+        setModelStatusMessage(''); // Clear model status if not connected
         setAvailableModels([]);
       }
     };
 
     checkConnectionAndFetchData();
-    // Optionally, set up a poller to check connection periodically or rely on user action to retry
-  }, []);
+    // Optionally, set up a poller to check connection periodically
+    // const intervalId = setInterval(checkConnectionAndFetchData, 30000); // e.g., every 30 seconds
+    // return () => clearInterval(intervalId);
+  }, []); // currentGlobalModel removed from deps to avoid re-fetching models on global model change
 
   const loadConversations = async () => {
     const convs = await db.conversations.orderBy('updatedAt').reverse().toArray();
@@ -109,6 +120,11 @@ const App: React.FC = () => {
           <p className={`text-xs ${ollamaConnected ? 'text-green-400' : 'text-red-400'}`}>
             {connectionStatusMessage}
           </p>
+          {modelStatusMessage && (
+            <p className={`text-xs mt-1 ${availableModels.length > 0 && ollamaConnected ? 'text-gray-400' : 'text-yellow-400'}`}>
+              {modelStatusMessage}
+            </p>
+          )}
         </div>
 
         {ollamaConnected && availableModels.length > 0 && (
@@ -151,7 +167,9 @@ if (container) {
   const root = createRoot(container);
   root.render(
     <React.StrictMode>
-      <App />
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     </React.StrictMode>
   );
 } else {
