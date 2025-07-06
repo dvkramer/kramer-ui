@@ -314,27 +314,28 @@ if __name__ == '__main__':
         test_model_name = models_data["models"][0]["name"] # Use the first available model
         print(f"\nTesting chat streaming with model: {test_model_name}...")
 
-        chat_chunks = []
-        chat_completed_data = None
-        chat_error_occurred = None
-        chat_done_event = threading.Event()
+        # Use a dictionary to store test results to avoid nonlocal issues in callbacks
+        test_results = {
+            "chat_chunks": [],
+            "chat_completed_data": None,
+            "chat_error_occurred": None,
+            "chat_done_event": threading.Event()
+        }
 
         def on_chat_chunk(chunk):
             print(f"Chunk: '{chunk}'", end='', flush=True)
-            chat_chunks.append(chunk)
+            test_results["chat_chunks"].append(chunk)
 
         def on_chat_complete(data):
-            nonlocal chat_completed_data
             print("\nChat stream complete!")
-            chat_completed_data = data
+            test_results["chat_completed_data"] = data
             # print(f"Full completion data: {data}")
-            chat_done_event.set()
+            test_results["chat_done_event"].set()
 
         def on_chat_error(error):
-            nonlocal chat_error_occurred
             print(f"\nChat stream error: {error}")
-            chat_error_occurred = error
-            chat_done_event.set()
+            test_results["chat_error_occurred"] = error
+            test_results["chat_done_event"].set()
 
         messages = [{"role": "user", "content": "Hello! Briefly tell me about yourself."}]
 
@@ -349,18 +350,18 @@ if __name__ == '__main__':
 
         # Wait for chat to complete or timeout
         print("\nWaiting for chat response (max 30s, Ctrl+C to stop early)...")
-        chat_done_event.wait(timeout=30)
+        test_results["chat_done_event"].wait(timeout=30)
 
-        if not chat_done_event.is_set():
+        if not test_results["chat_done_event"].is_set():
             print("\nChat timeout or still running. Attempting to stop stream...")
             client.stop_current_stream()
-            chat_done_event.wait(timeout=5) # Wait a bit more for it to stop
+            test_results["chat_done_event"].wait(timeout=5) # Wait a bit more for it to stop
 
-        if chat_error_occurred:
-            print(f"Chat test failed with error: {chat_error_occurred}")
-        elif chat_completed_data:
-            print(f"Chat test successful. Full response: {''.join(chat_chunks)}")
-            print(f"Done reason: {chat_completed_data.get('done_reason')}")
+        if test_results["chat_error_occurred"]:
+            print(f"Chat test failed with error: {test_results['chat_error_occurred']}")
+        elif test_results["chat_completed_data"]:
+            print(f"Chat test successful. Full response: {''.join(test_results['chat_chunks'])}")
+            print(f"Done reason: {test_results['chat_completed_data'].get('done_reason')}")
         else:
             print("Chat test did not complete as expected.")
 
