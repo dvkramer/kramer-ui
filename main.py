@@ -68,8 +68,8 @@ def main():
             # root.after(500, root.destroy) # Wait 500ms then destroy
             # For now, direct destroy. UI threads are daemonic.
 
-        # DB connection is managed by context manager ('with self') in db_manager,
-        # so explicit close on app exit isn't strictly necessary unless operations are pending.
+        # Close the single, persistent database connection.
+        db_manager.close()
 
         root.destroy()
 
