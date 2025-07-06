@@ -1,27 +1,71 @@
 {
-  "name": "kramer-ui-for-ollama",
-  "version": "1.0.0",
-  "main": "index.js",
+  "name": "ollama-electron-react-app",
+  "version": "0.1.0",
+  "description": "Desktop application for Ollama",
+  "main": "dist/main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "electron dist/main.js",
+    "build:main": "webpack --config webpack.config.js --mode production --env target=main,preload",
+    "build:renderer": "webpack --config webpack.config.js --mode production --env target=renderer",
+    "build": "npm run build:main && npm run build:renderer",
+    "watch:main": "webpack --config webpack.config.js --mode development --env target=main,preload --watch",
+    "watch:renderer": "webpack serve --config webpack.config.js --mode development --env target=renderer --port 8080",
+    "dev": "concurrently -k \"npm:watch:main\" \"npm:watch:renderer\" \"nodemon --watch dist/main.js --watch dist/preload.js --exec electron dist/main.js\"",
+    "package": "npm run build && electron-builder"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
-  "devDependencies": {
-    "@types/node": "^24.0.10",
-    "@types/react": "^19.1.8",
-    "@types/react-dom": "^19.1.6",
-    "@vitejs/plugin-react": "^4.6.0",
-    "concurrently": "^9.2.0",
-    "electron": "^37.2.0",
-    "typescript": "^5.8.3",
-    "vite": "^7.0.2"
-  },
+  "keywords": [
+    "Electron",
+    "React",
+    "TypeScript",
+    "Ollama"
+  ],
+  "author": "AI Agent",
+  "license": "MIT",
   "dependencies": {
-    "dexie": "^4.0.11",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "dexie": "^4.0.1", // Updated to a more recent version
+    "electron": "^28.0.0",
+    "electron-is-dev": "^3.0.1", // Added for mode checking
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/electron": "^1.6.10",
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.2.37",
+    "@types/react-dom": "^18.2.15",
+    "concurrently": "^8.2.2",
+    "copy-webpack-plugin": "^11.0.0",
+    "css-loader": "^6.8.1",
+    "electron-builder": "^24.6.4",
+    "html-webpack-plugin": "^5.5.3",
+    "nodemon": "^3.0.2",
+    "postcss": "^8.4.31", // Already here, ensure it's >= Tailwind's requirement
+    "postcss-loader": "^7.3.3", // Already here
+    "autoprefixer": "^10.4.16", // Add autoprefixer
+    "tailwindcss": "^3.3.5", // Already here, ensure version
+    "ts-loader": "^9.5.0",
+    "typescript": "^5.2.2",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4",
+    "webpack-dev-server": "^4.15.1"
+  },
+  "build": {
+    "appId": "com.ollama.desktop",
+    "mac": {
+      "category": "public.utility"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "files": [
+      "dist/**/*",
+      "node_modules/**/*",
+      "package.json",
+      "index.html"
+    ],
+    "directories": {
+      "buildResources": "assets",
+      "output": "release"
+    }
   }
 }
