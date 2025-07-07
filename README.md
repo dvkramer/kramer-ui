@@ -13,11 +13,11 @@ A custom graphical user interface (GUI) built with `customtkinter` for interacti
 * **Responsive Layout**: Adjusts the chat area width based on the window size.
 * **Status Bar**: Displays connection status and generation progress.
 
-## Usage (for the Executable)
+## Usage
 
-This repository likely contains the source code for the executable. If you have the executable file (e.g., `KramerUI.exe`), follow these steps:
+To use Kramer UI for Ollama, download the executable file from the releases page and follow these steps:
 
-1.  **Ensure Ollama is Running**: Make sure your Ollama server is running locally on `http://127.0.0.1:11434` (or your configured host) and that you have models pulled.
+1.  **Ensure Ollama is Running**: Make sure  Ollama is running and that you have models pulled.
 2.  **Launch the Executable**: Double-click the executable file you've obtained.
 3.  **Select a Model**: Once the application connects, choose an available model from the dropdown menu at the top right.
 4.  **Start Chatting**: Type your message in the input box and press Enter or click the "Send" button.
