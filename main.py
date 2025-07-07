@@ -33,7 +33,7 @@ class OllamaGuiApp(ctk.CTk):
         super().__init__()
         
         self.title(APP_NAME)
-        self.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
+        self.after(0, lambda: self.state('zoomed'))  # Delayed zoom
         self.minsize(600, 500)
         
         # Set dark theme
