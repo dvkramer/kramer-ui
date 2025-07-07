@@ -4,12 +4,14 @@ from ollama import Client
 import threading
 import json
 from datetime import datetime
+import re
 
 # --- Constants ---
 APP_NAME = "Ollama Chat"
 WINDOW_WIDTH = 900
 WINDOW_HEIGHT = 700
 OLLAMA_HOST = 'http://127.0.0.1:11434'
+MAX_CHAT_WIDTH = 1000  # Maximum width for chat area
 
 # Modern color scheme
 COLORS = {
@@ -61,6 +63,9 @@ class OllamaGuiApp(ctk.CTk):
         # Header with model selector
         self._create_header()
         
+        # Main container for chat area with width constraint
+        self._create_main_container()
+        
         # Chat area
         self._create_chat_area()
         
@@ -85,7 +90,7 @@ class OllamaGuiApp(ctk.CTk):
         title_label = ctk.CTkLabel(
             self.header_frame, 
             text="🦙 Ollama Chat", 
-            font=ctk.CTkFont(size=18, weight="bold"),
+            font=ctk.CTkFont(size=20, weight="bold"),  # Increased from 18
             text_color=COLORS['text']
         )
         title_label.grid(row=0, column=0, padx=20, pady=15, sticky="w")
@@ -97,7 +102,7 @@ class OllamaGuiApp(ctk.CTk):
         model_label = ctk.CTkLabel(
             model_frame, 
             text="Model:", 
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(size=14),  # Increased from 12
             text_color=COLORS['text_muted']
         )
         model_label.grid(row=0, column=0, padx=(0, 10))
@@ -108,6 +113,7 @@ class OllamaGuiApp(ctk.CTk):
             values=["Loading..."],
             state="disabled",
             width=200,
+            font=ctk.CTkFont(size=14),  # Added font size
             fg_color=COLORS['surface_light'],
             button_color=COLORS['accent'],
             button_hover_color=COLORS['accent_hover']
@@ -123,31 +129,74 @@ class OllamaGuiApp(ctk.CTk):
             height=32,
             fg_color=COLORS['surface_light'],
             hover_color=COLORS['accent'],
-            font=ctk.CTkFont(size=12)
+            font=ctk.CTkFont(size=14)  # Increased from 12
         )
         self.new_chat_btn.grid(row=0, column=2, padx=(15, 0))
+    
+    def _create_main_container(self):
+        """Create main container with width constraint"""
+        self.main_container = ctk.CTkFrame(
+            self,
+            fg_color="transparent"
+        )
+        self.main_container.grid(row=1, column=0, sticky="nsew")
+        self.main_container.grid_columnconfigure(1, weight=1)  # Center column expands
+        self.main_container.grid_rowconfigure(0, weight=1)
+        
+        # Left spacer
+        left_spacer = ctk.CTkFrame(self.main_container, fg_color="transparent", width=0)
+        left_spacer.grid(row=0, column=0, sticky="nsew")
+        
+        # Chat container with max width
+        self.chat_container = ctk.CTkFrame(
+            self.main_container,
+            fg_color="transparent",
+            width=MAX_CHAT_WIDTH
+        )
+        self.chat_container.grid(row=0, column=1, sticky="nsew", padx=20)
+        self.chat_container.grid_columnconfigure(0, weight=1)
+        self.chat_container.grid_rowconfigure(0, weight=1)
+        self.chat_container.grid_rowconfigure(1, weight=0)
+        
+        # Right spacer
+        right_spacer = ctk.CTkFrame(self.main_container, fg_color="transparent", width=0)
+        right_spacer.grid(row=0, column=2, sticky="nsew")
+        
+        # Bind to window resize to enforce max width
+        self.bind("<Configure>", self._on_window_resize)
+    
+    def _on_window_resize(self, event):
+        """Handle window resize to maintain max chat width"""
+        if event.widget == self:
+            window_width = self.winfo_width()
+            if window_width > MAX_CHAT_WIDTH + 40:  # 40 for padding
+                # Calculate side padding to center the chat
+                side_padding = (window_width - MAX_CHAT_WIDTH) // 2
+                self.chat_container.grid_configure(padx=side_padding)
+            else:
+                self.chat_container.grid_configure(padx=20)
     
     def _create_chat_area(self):
         """Create scrollable chat area"""
         self.chat_frame = ctk.CTkScrollableFrame(
-            self,
+            self.chat_container,
             corner_radius=0,
             fg_color=COLORS['bg'],
             scrollbar_button_color=COLORS['surface_light'],
             scrollbar_button_hover_color=COLORS['accent']
         )
-        self.chat_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 10))
+        self.chat_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 10))
         self.chat_frame.grid_columnconfigure(0, weight=1)
     
     def _create_input_area(self):
         """Create input area with text box and send button"""
         self.input_frame = ctk.CTkFrame(
-            self,
+            self.chat_container,
             height=80,
             corner_radius=15,
             fg_color=COLORS['surface']
         )
-        self.input_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 20))
+        self.input_frame.grid(row=1, column=0, sticky="ew", pady=(0, 20))
         self.input_frame.grid_columnconfigure(0, weight=1)
         
         # Input text box
@@ -157,7 +206,7 @@ class OllamaGuiApp(ctk.CTk):
             corner_radius=10,
             fg_color=COLORS['surface_light'],
             border_color=COLORS['surface_light'],
-            font=ctk.CTkFont(size=12)
+            font=ctk.CTkFont(size=14)  # Increased from 12
         )
         self.user_input.grid(row=0, column=0, sticky="ew", padx=15, pady=15)
         self.user_input.bind("<Return>", self._on_enter_key)
@@ -173,7 +222,7 @@ class OllamaGuiApp(ctk.CTk):
             corner_radius=10,
             fg_color=COLORS['accent'],
             hover_color=COLORS['accent_hover'],
-            font=ctk.CTkFont(size=12, weight="bold")
+            font=ctk.CTkFont(size=14, weight="bold")  # Increased from 12
         )
         self.send_button.grid(row=0, column=1, padx=(0, 15), pady=15)
     
@@ -185,12 +234,12 @@ class OllamaGuiApp(ctk.CTk):
             corner_radius=0,
             fg_color=COLORS['surface']
         )
-        self.status_frame.grid(row=3, column=0, sticky="ew")
+        self.status_frame.grid(row=2, column=0, sticky="ew")
         
         self.status_label = ctk.CTkLabel(
             self.status_frame,
             text=f"Connecting to {OLLAMA_HOST}...",
-            font=ctk.CTkFont(size=10),
+            font=ctk.CTkFont(size=12),  # Increased from 10
             text_color=COLORS['text_muted']
         )
         self.status_label.pack(side="left", padx=10, pady=2)
@@ -259,6 +308,81 @@ class OllamaGuiApp(ctk.CTk):
         """Update status bar message"""
         self.status_label.configure(text=message)
     
+    def _parse_thinking_content(self, content):
+        """Parse content to separate thinking sections from regular content"""
+        # Pattern to match <think>...</think> blocks
+        think_pattern = r'<think>(.*?)</think>'
+        
+        # Find all thinking blocks
+        thinking_blocks = re.findall(think_pattern, content, re.DOTALL)
+        
+        # Remove thinking blocks from main content
+        clean_content = re.sub(think_pattern, '', content, flags=re.DOTALL).strip()
+        
+        return clean_content, thinking_blocks
+    
+    def _create_thinking_dropdown(self, parent, thinking_blocks):
+        """Create a collapsible dropdown for thinking content"""
+        if not thinking_blocks:
+            return None
+        
+        # Create dropdown frame
+        dropdown_frame = ctk.CTkFrame(parent, fg_color="transparent")
+        dropdown_frame.pack(fill="x", padx=18, pady=(0, 8))
+        
+        # Create toggle button
+        self.thinking_expanded = False
+        toggle_btn = ctk.CTkButton(
+            dropdown_frame,
+            text="▶ Show Thinking",
+            command=lambda: self._toggle_thinking(dropdown_frame, toggle_btn, thinking_blocks),
+            width=120,
+            height=28,
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['surface'],
+            font=ctk.CTkFont(size=12),
+            text_color=COLORS['text_muted']
+        )
+        toggle_btn.pack(anchor="w", pady=(0, 5))
+        
+        return dropdown_frame
+    
+    def _toggle_thinking(self, dropdown_frame, toggle_btn, thinking_blocks):
+        """Toggle the thinking content visibility"""
+        # Check if thinking content already exists
+        thinking_content = None
+        for widget in dropdown_frame.winfo_children():
+            if isinstance(widget, ctk.CTkTextbox):
+                thinking_content = widget
+                break
+        
+        if thinking_content:
+            # Hide thinking content
+            thinking_content.destroy()
+            toggle_btn.configure(text="▶ Show Thinking")
+            self.thinking_expanded = False
+        else:
+            # Show thinking content
+            thinking_text = "\n\n".join(thinking_blocks)
+            thinking_content = ctk.CTkTextbox(
+                dropdown_frame,
+                height=min(200, len(thinking_text.split('\n')) * 20 + 40),
+                corner_radius=8,
+                fg_color=COLORS['surface'],
+                border_color=COLORS['surface_light'],
+                font=ctk.CTkFont(size=13),
+                text_color=COLORS['text_muted'],
+                wrap="word"
+            )
+            thinking_content.pack(fill="x", pady=(0, 5))
+            thinking_content.insert("0.0", thinking_text)
+            thinking_content.configure(state="disabled")
+            
+            toggle_btn.configure(text="▼ Hide Thinking")
+            self.thinking_expanded = True
+        
+        self._scroll_to_bottom()
+    
     def _add_message(self, role, content, is_streaming=False):
         """Add a message bubble to the chat"""
         # Create message container
@@ -266,7 +390,7 @@ class OllamaGuiApp(ctk.CTk):
             self.chat_frame,
             fg_color="transparent"
         )
-        msg_container.grid(row=len(self.chat_frame.winfo_children()), column=0, sticky="ew", pady=5)
+        msg_container.grid(row=len(self.chat_frame.winfo_children()), column=0, sticky="ew", pady=8)  # Increased padding
         msg_container.grid_columnconfigure(0, weight=1)
         
         # Configure alignment and colors
@@ -274,10 +398,14 @@ class OllamaGuiApp(ctk.CTk):
             anchor = "right"
             bg_color = COLORS['user_bubble']
             text_color = "white"
+            clean_content = content
+            thinking_blocks = []
         else:
             anchor = "left"
             bg_color = COLORS['ai_bubble']
             text_color = COLORS['text']
+            # Parse thinking content for AI messages
+            clean_content, thinking_blocks = self._parse_thinking_content(content)
         
         # Create message bubble
         bubble = ctk.CTkFrame(
@@ -287,16 +415,21 @@ class OllamaGuiApp(ctk.CTk):
         )
         bubble.pack(side=anchor, padx=10, fill="x" if role == "assistant" else "none", expand=True if role == "assistant" else False)
         
-        # Add message content
+        # Add thinking dropdown if there are thinking blocks (AI messages only)
+        if role == "assistant" and thinking_blocks and not is_streaming:
+            self._create_thinking_dropdown(bubble, thinking_blocks)
+        
+        # Add message content (cleaned of thinking tags)
+        display_content = clean_content if clean_content.strip() else content
         message_label = ctk.CTkLabel(
             bubble,
-            text=content,
-            font=ctk.CTkFont(size=12),
+            text=display_content,
+            font=ctk.CTkFont(size=15),  # Increased from 12
             text_color=text_color,
-            wraplength=600,
+            wraplength=700,  # Increased from 600
             justify="left"
         )
-        message_label.pack(padx=15, pady=10, anchor="w")
+        message_label.pack(padx=18, pady=12, anchor="w")  # Increased padding
         
         # Add timestamp for completed messages
         if not is_streaming:
@@ -304,7 +437,7 @@ class OllamaGuiApp(ctk.CTk):
             time_label = ctk.CTkLabel(
                 msg_container,
                 text=timestamp,
-                font=ctk.CTkFont(size=9),
+                font=ctk.CTkFont(size=11),  # Increased from 9
                 text_color=COLORS['text_muted']
             )
             time_label.pack(side=anchor, padx=15, pady=(0, 5))
@@ -371,11 +504,27 @@ class OllamaGuiApp(ctk.CTk):
                 if 'message' in chunk and 'content' in chunk['message']:
                     content = chunk['message']['content']
                     full_response += content
-                    self.after(0, lambda: ai_label.configure(text=full_response))
+                    
+                    # For streaming, show raw content but parse for final display
+                    display_content = full_response
+                    if '<think>' in full_response and '</think>' in full_response:
+                        clean_content, _ = self._parse_thinking_content(full_response)
+                        if clean_content.strip():
+                            display_content = clean_content
+                    
+                    self.after(0, lambda: ai_label.configure(text=display_content))
                     self.after(0, self._scroll_to_bottom)
             
-            # Add to conversation history
-            self.conversation_history.append({"role": "assistant", "content": full_response})
+            # After streaming is complete, recreate the message with proper thinking dropdown
+            if full_response.strip():
+                # Remove the streaming message
+                ai_label.master.master.destroy()
+                
+                # Add the final message with thinking dropdown
+                self._add_message("assistant", full_response)
+                
+                # Add to conversation history
+                self.conversation_history.append({"role": "assistant", "content": full_response})
             
         except Exception as e:
             error_msg = f"Error: {str(e)}"
@@ -389,12 +538,13 @@ class OllamaGuiApp(ctk.CTk):
     
     def _toggle_input(self, enabled):
         """Toggle input widgets"""
-        state = "normal" if enabled else "disabled"
-        self.user_input.configure(state=state)
-        self.send_button.configure(state=state)
+        # Only disable the send button, never the input box
+        send_state = "normal" if enabled else "disabled"
+        self.send_button.configure(state=send_state)
         
-        if enabled:
-            self.user_input.focus()
+        # Always keep the input box enabled and focused
+        self.user_input.configure(state="normal")
+        self.user_input.focus()
     
     def _new_chat(self):
         """Start a new chat"""
