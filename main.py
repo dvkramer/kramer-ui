@@ -253,10 +253,7 @@ class OllamaGuiApp(ctk.CTk):
         """Fetch available models from Ollama"""
         try:
             response = self.client.list()
-            print(f"DEBUG: Raw response: {response}")  # Debug output
-            
             models = response.get('models', [])
-            print(f"DEBUG: Models found: {models}")  # Debug output
             
             if not models:
                 self.after(0, self._handle_no_models)
@@ -271,9 +268,7 @@ class OllamaGuiApp(ctk.CTk):
                     model_names.append(model['name'])
                 elif isinstance(model, dict) and 'model' in model:
                     model_names.append(model['model'])
-            
-            print(f"DEBUG: Model names: {model_names}")  # Debug output
-            
+
             if not model_names:
                 self.after(0, self._handle_no_models)
                 return
@@ -281,9 +276,8 @@ class OllamaGuiApp(ctk.CTk):
             self.after(0, self._update_model_list, model_names)
             
         except Exception as e:
-            print(f"DEBUG: Exception: {e}")  # Debug output
             self.after(0, self._handle_connection_error, str(e))
-    
+
     def _update_model_list(self, model_names):
         """Update the model selector with available models"""
         if not model_names:
@@ -626,12 +620,7 @@ class OllamaGuiApp(ctk.CTk):
             vertical_stack = edit_button_widget.master.master
             bubble_widget = vertical_stack.winfo_children()[0] # The bubble is the first child
             original_content = self.conversation_history[msg_idx]['content']
-        except IndexError:
-            print(f"Error: Message index {msg_idx} out of bounds.")
-            self._toggle_input(True)
-            return
-        except AttributeError:
-            print(f"Error: Could not find bubble widget for editing.")
+        except (IndexError, AttributeError):
             self._toggle_input(True)
             return
 
@@ -756,7 +745,6 @@ class OllamaGuiApp(ctk.CTk):
             return
 
         if msg_idx <= 0: # Cannot regenerate if there's no preceding user message
-            print("DEBUG: Cannot regenerate AI message at index 0 or invalid index.")
             return
 
         # Briefly disable the button - it will be destroyed and recreated anyway
