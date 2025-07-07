@@ -11,6 +11,8 @@ A custom graphical user interface (GUI) built with `customtkinter` for interacti
 * **"Thinking" Content Display**: Parses and allows viewing of `think` blocks (content within `<think>` tags) from AI responses in a collapsible dropdown.
 * **Responsive Layout**: Adjusts the chat area width based on the window size.
 
+![image](https://github.com/user-attachments/assets/d97927f5-3ac3-4bbb-8bcb-cb788c24e41f)
+
 ## Usage
 
 Download the executable file (Kramer-UI.exe) from the releases page, then follow these steps:
