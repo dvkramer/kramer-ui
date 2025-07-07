@@ -430,6 +430,48 @@ class OllamaGuiApp(ctk.CTk):
             justify="left"
         )
         message_label.pack(padx=18, pady=12, anchor="w")  # Increased padding
+
+        # --- Add Edit/Regenerate buttons for completed messages ---
+        if not is_streaming:
+            button_frame = ctk.CTkFrame(bubble, fg_color="transparent")
+            button_frame.pack(fill="x", padx=10, pady=(0, 5)) # Pack below message_label
+
+            if role == "user":
+                edit_button = ctk.CTkButton(
+                    button_frame,
+                    text="Edit",
+                    font=ctk.CTkFont(size=12),
+                    width=60,
+                    height=24,
+                    fg_color=COLORS['surface_light'],
+                    hover_color=COLORS['accent']
+                    # Command will be configured below after edit_button is created
+                )
+                # Pass the button widget itself to _start_edit to help locate the bubble
+                # The index is len(self.conversation_history) because this message hasn't been added yet
+                # when _add_message is called from _send_message.
+                current_message_index = len(self.conversation_history)
+                edit_button.configure(command=lambda idx=current_message_index, btn=edit_button: self._start_edit(idx, btn))
+                edit_button.pack(side="right", padx=(0, 5))
+            elif role == "assistant":
+                regenerate_button = ctk.CTkButton(
+                    button_frame,
+                    text="Regenerate",
+                    font=ctk.CTkFont(size=12),
+                    width=90,
+                    height=24,
+                    fg_color=COLORS['surface_light'],
+                    hover_color=COLORS['accent']
+                    # Command will be configured below
+                )
+                # When _add_message is called for a completed AI response (from _stream_response),
+                # the message has ALREADY been added to self.conversation_history.
+                # So, its index is len(self.conversation_history) - 1.
+                current_ai_message_index = len(self.conversation_history) - 1
+                if current_ai_message_index < 0: # Should not happen in normal flow
+                    current_ai_message_index = 0
+                regenerate_button.configure(command=lambda idx=current_ai_message_index, btn=regenerate_button: self._start_regenerate(idx, btn))
+                regenerate_button.pack(side="right", padx=(0, 5))
         
         # Add timestamp for completed messages
         if not is_streaming:
@@ -537,14 +579,21 @@ class OllamaGuiApp(ctk.CTk):
             self.after(0, self._update_status, "Ready")
     
     def _toggle_input(self, enabled):
-        """Toggle input widgets"""
-        # Only disable the send button, never the input box
-        send_state = "normal" if enabled else "disabled"
-        self.send_button.configure(state=send_state)
+        """Toggle input widgets, including the New Chat button."""
+        input_state = "normal" if enabled else "disabled"
+
+        # Send button
+        self.send_button.configure(state=input_state)
+
+        # New Chat button
+        if hasattr(self, 'new_chat_btn'): # Ensure new_chat_btn exists
+            self.new_chat_btn.configure(state=input_state)
         
-        # Always keep the input box enabled and focused
+        # Always keep the input box enabled and focused,
+        # actual sending is blocked by self.is_generating and send_button state.
         self.user_input.configure(state="normal")
-        self.user_input.focus()
+        if enabled: # Only focus if we are enabling input
+            self.user_input.focus()
     
     def _new_chat(self):
         """Start a new chat"""
@@ -556,6 +605,234 @@ class OllamaGuiApp(ctk.CTk):
         
         self._update_status("New chat started")
         self.user_input.focus()
+
+    def _clear_chat_from_index(self, start_idx):
+        """Remove message containers from the UI from start_idx onwards."""
+        # msg_containers are direct children of self.chat_frame
+        all_msg_containers = self.chat_frame.winfo_children()
+
+        # Ensure start_idx is within bounds
+        if start_idx < 0:
+            start_idx = 0
+
+        for i in range(len(all_msg_containers) -1, start_idx -1, -1):
+            if i < len(all_msg_containers): # double check to prevent race conditions if list changes
+                all_msg_containers[i].destroy()
+
+    def _start_edit(self, msg_idx, edit_button_widget):
+        """Begin editing a user message."""
+        if self.is_generating: # Don't allow edit if AI is generating
+            return
+
+        self._toggle_input(False) # Disable main input
+
+        try:
+            bubble_widget = edit_button_widget.master.master # button -> button_frame -> bubble
+            original_content = self.conversation_history[msg_idx]['content']
+        except IndexError:
+            print(f"Error: Message index {msg_idx} out of bounds.")
+            self._toggle_input(True)
+            return
+        except AttributeError:
+            print(f"Error: Could not find bubble widget for editing.")
+            self._toggle_input(True)
+            return
+
+        # Store original children
+        original_children = []
+        for child in bubble_widget.winfo_children():
+            original_children.append(child)
+
+        # Clear current bubble content (message_label, button_frame)
+        for child in original_children:
+            child.pack_forget()
+
+        # Create editing UI
+        edit_textbox = ctk.CTkTextbox(
+            bubble_widget,
+            font=ctk.CTkFont(size=15),
+            fg_color=COLORS['surface_light'],
+            border_color=COLORS['surface_light'],
+            text_color=COLORS['text'],
+            height=max(100, bubble_widget.winfo_height()), # Try to match original bubble height
+            wrap="word"
+        )
+        edit_textbox.insert("0.0", original_content)
+        edit_textbox.pack(padx=10, pady=10, fill="both", expand=True)
+        edit_textbox.focus()
+
+        # Edit action buttons frame
+        actions_frame = ctk.CTkFrame(bubble_widget, fg_color="transparent")
+        actions_frame.pack(fill="x", padx=10, pady=(0,10))
+
+        save_button = ctk.CTkButton(
+            actions_frame,
+            text="Save",
+            command=lambda: self._save_edit(msg_idx, edit_textbox, bubble_widget, original_children),
+            width=70,
+            height=28,
+            fg_color=COLORS['success'],
+            hover_color=ctk.ThemeManager.theme["CTkButton"]["hover_color"] # A slightly lighter green or default
+        )
+        save_button.pack(side="right", padx=(5,0))
+
+        cancel_button = ctk.CTkButton(
+            actions_frame,
+            text="Cancel",
+            command=lambda: self._cancel_edit(msg_idx, bubble_widget, original_children, original_content),
+            width=70,
+            height=28,
+            fg_color=COLORS['error'],
+            hover_color=ctk.ThemeManager.theme["CTkButton"]["hover_color"] # A slightly lighter red or default
+        )
+        cancel_button.pack(side="right", padx=(0,5))
+
+        self.after(100, self._scroll_to_bottom) # Ensure edited message is visible
+
+
+    def _save_edit(self, msg_idx, textbox_widget, bubble_widget, original_bubble_children):
+        """Save the edited message, truncate history, and trigger new AI response."""
+        new_text = textbox_widget.get("1.0", "end-1c").strip()
+
+        if not new_text: # Do not save if text is empty, maybe show a small error or just cancel
+            self._cancel_edit(msg_idx, bubble_widget, original_bubble_children, self.conversation_history[msg_idx]['content'])
+            # Optionally, add a small status message here indicating save failed due to empty content
+            return
+
+        # 1. Update conversation_history at msg_idx
+        self.conversation_history[msg_idx]['content'] = new_text
+
+        # 2. Truncate UI - Remove all messages after the current one being edited
+        # The msg_containers are direct children of self.chat_frame
+        # Their index in chat_frame.winfo_children() corresponds to their history index
+        self._clear_chat_from_index(msg_idx + 1)
+
+        # 3. Truncate conversation_history list
+        self.conversation_history = self.conversation_history[:msg_idx + 1]
+
+        # 4. Restore the edited message bubble's original UI with new text
+        # Clear editing UI (textbox, Save/Cancel buttons)
+        for widget in bubble_widget.winfo_children():
+            if widget not in original_bubble_children:
+                widget.destroy()
+
+        # Restore original children by repacking them (similar to _cancel_edit)
+        for child_widget in original_bubble_children:
+            if isinstance(child_widget, ctk.CTkLabel): # Assuming this is the message_label
+                child_widget.configure(text=new_text) # Use new_text
+                child_widget.pack(padx=18, pady=12, anchor="w")
+            elif isinstance(child_widget, ctk.CTkFrame): # Assuming this is the button_frame
+                child_widget.pack(fill="x", padx=10, pady=(0, 5))
+            else:
+                child_widget.pack()
+
+        # 5. Trigger new AI response
+        if self.model_selector.cget("state") == "disabled":
+            self._update_status("Cannot generate response: No model selected or connection error.")
+            self._toggle_input(True) # Re-enable main input as no AI response will come
+            return
+
+        self.is_generating = True
+        self._toggle_input(False) # Disable main input during generation
+        self._update_status("Generating response...")
+
+        # Add AI message placeholder
+        # Note: _add_message adds a new msg_container at the end of self.chat_frame.winfo_children()
+        ai_label = self._add_message("assistant", "●●●", is_streaming=True)
+
+        # History for AI is the now-truncated self.conversation_history
+        history_for_ai = self.conversation_history.copy()
+
+        threading.Thread(
+            target=self._stream_response,
+            args=(history_for_ai, ai_label), # _stream_response will append AI response to self.conversation_history
+            daemon=True
+        ).start()
+
+        self.after(100, self._scroll_to_bottom)
+
+    def _start_regenerate(self, msg_idx, regenerate_button_widget):
+        """Regenerate an AI response."""
+        if self.is_generating: # Prevent multiple generations
+            return
+
+        if msg_idx <= 0: # Cannot regenerate if there's no preceding user message
+            print("DEBUG: Cannot regenerate AI message at index 0 or invalid index.")
+            return
+
+        # Briefly disable the button - it will be destroyed and recreated anyway
+        if regenerate_button_widget and regenerate_button_widget.winfo_exists():
+            regenerate_button_widget.configure(state="disabled")
+
+        self.is_generating = True
+        self._toggle_input(False)
+        self._update_status("Regenerating response...")
+
+        # 1. Truncate conversation_history to exclude the old AI message and anything after
+        # The history should contain messages UP TO the user message that prompted the AI response.
+        # If msg_idx is the AI's message, then history should be up to msg_idx (exclusive).
+        self.conversation_history = self.conversation_history[:msg_idx]
+
+        # 2. Truncate UI - Remove old AI message and subsequent messages from UI
+        # msg_idx is the index in the chat_frame.winfo_children() list
+        self._clear_chat_from_index(msg_idx)
+
+        # 3. Trigger new AI response
+        if self.model_selector.cget("state") == "disabled":
+            self._update_status("Cannot regenerate: No model selected or connection error.")
+            self.is_generating = False
+            self._toggle_input(True)
+            return
+
+        # Add AI message placeholder
+        ai_label = self._add_message("assistant", "●●●", is_streaming=True)
+
+        # History for AI is the now-truncated self.conversation_history
+        # This history should contain the user message that prompted the original AI response.
+        history_for_ai = self.conversation_history.copy()
+
+        if not history_for_ai or history_for_ai[-1]['role'] != 'user':
+            # This case should ideally not be reached if msg_idx > 0 and history was user, ai, user, ai ...
+            # However, as a safeguard:
+            self._update_status("Error: Invalid history state for regeneration.")
+            self.is_generating = False
+            self._toggle_input(True)
+            # Clean up the placeholder message
+            if ai_label and ai_label.master and ai_label.master.master:
+                ai_label.master.master.destroy()
+            return
+
+        threading.Thread(
+            target=self._stream_response,
+            args=(history_for_ai, ai_label), # _stream_response appends the new AI response
+            daemon=True
+        ).start()
+
+        self.after(100, self._scroll_to_bottom)
+
+
+    def _cancel_edit(self, msg_idx, bubble_widget, original_bubble_children, original_content):
+        """Cancel editing and restore original message."""
+        # Clear editing UI (textbox, Save/Cancel buttons)
+        for widget in bubble_widget.winfo_children(): # This will destroy the textbox and action_frame
+            if widget not in original_bubble_children: # only destroy newly added edit widgets
+                widget.destroy()
+
+        # Restore original children by repacking them
+        # The original_bubble_children are [message_label, button_frame]
+        for child_widget in original_bubble_children:
+            if isinstance(child_widget, ctk.CTkLabel): # Assuming this is the message_label
+                child_widget.configure(text=original_content) # Restore original text
+                child_widget.pack(padx=18, pady=12, anchor="w") # Original packing for message_label
+            elif isinstance(child_widget, ctk.CTkFrame): # Assuming this is the button_frame
+                child_widget.pack(fill="x", padx=10, pady=(0, 5)) # Original packing for button_frame
+            else: # Fallback for any other original child, though not expected for user messages
+                child_widget.pack()
+
+
+        self._toggle_input(True) # Re-enable main input
+        self.after(100, self._scroll_to_bottom)
+
 
 if __name__ == "__main__":
     app = OllamaGuiApp()
