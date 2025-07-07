@@ -7,7 +7,7 @@ from datetime import datetime
 import re
 
 # --- Constants ---
-APP_NAME = "Ollama Chat"
+APP_NAME = "Kramer UI for Ollama"
 WINDOW_WIDTH = 900
 WINDOW_HEIGHT = 700
 OLLAMA_HOST = 'http://127.0.0.1:11434'
@@ -89,7 +89,7 @@ class OllamaGuiApp(ctk.CTk):
         # App title
         title_label = ctk.CTkLabel(
             self.header_frame, 
-            text="🦙 Ollama Chat", 
+            text="🦙 Kramer UI for Ollama", 
             font=ctk.CTkFont(size=20, weight="bold"),  # Increased from 18
             text_color=COLORS['text']
         )
