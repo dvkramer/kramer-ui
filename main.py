@@ -50,6 +50,8 @@ class OllamaGuiApp(ctk.CTk):
         self.conversation_history = []
         self.selected_model = ctk.StringVar()
         self.is_generating = False
+        self.editing_frame = None # Frame for inline editing UI
+        self.active_edit_button = None # Store the currently disabled edit button
         
         # Configure grid
         self.grid_columnconfigure(0, weight=1)
@@ -430,23 +432,94 @@ class OllamaGuiApp(ctk.CTk):
             justify="left"
         )
         message_label.pack(padx=18, pady=12, anchor="w")  # Increased padding
-        
-        # Add timestamp for completed messages
-        if not is_streaming:
+
+        # --- Add Edit button for completed user messages (outside the bubble) ---
+        if role == "user" and not is_streaming:
+            # Edit button goes into msg_container, aligned to the side of/below the bubble
+            edit_button_container = ctk.CTkFrame(msg_container, fg_color="transparent")
+            # Pack timestamp first, then edit button container
+            # Timestamp will be packed based on 'anchor'
+
             timestamp = datetime.now().strftime("%H:%M")
             time_label = ctk.CTkLabel(
                 msg_container,
                 text=timestamp,
-                font=ctk.CTkFont(size=11),  # Increased from 9
+                font=ctk.CTkFont(size=11),
                 text_color=COLORS['text_muted']
             )
-            time_label.pack(side=anchor, padx=15, pady=(0, 5))
-        
-        self._scroll_to_bottom()
+            time_label.pack(side=anchor, padx=15, pady=(0,0), anchor="s")
+
+            edit_button_container.pack(side=anchor, fill="x", padx=10, pady=(2,5))
+
+            edit_button = ctk.CTkButton(
+                edit_button_container,
+                text="✏️",  # Emoji for Edit
+                font=None, # Use default font for better emoji rendering potentially
+                width=30,
+                height=30,
+                fg_color=COLORS['surface_light'],
+                hover_color=COLORS['accent']
+            )
+            current_message_index = len(self.conversation_history)
+            # edit_button_container is the parent of edit_button. msg_container is parent of edit_button_container.
+            edit_button.configure(command=lambda idx=current_message_index, btn=edit_button: self._start_edit(idx, btn))
+            edit_button.pack(side="right" if anchor == "right" else "left", padx=5)
+
+        elif not is_streaming: # For AI messages, just add timestamp
+            timestamp = datetime.now().strftime("%H:%M")
+            time_label = ctk.CTkLabel(
+                msg_container,
+                text=timestamp,
+                font=ctk.CTkFont(size=11),
+                text_color=COLORS['text_muted']
+            )
+            time_label.pack(side=anchor, padx=15, pady=(0, 5), anchor="s")
+
+        # self._scroll_to_bottom() is now typically called by _re_grid_chat_widgets
+        # However, for streaming, we might want to ensure scroll happens.
+        if is_streaming:
+            self._scroll_to_bottom()
+        elif self.editing_frame is None : # Only regrid if not in an active edit sequence that will handle it
+             self.after(10, self._re_grid_chat_widgets) # Use self.after to allow current UI changes to process
+
         return message_label
-    
+
+    def _scroll_to_widget(self, widget):
+        """Scroll chat to make the specified widget visible."""
+        if not widget or not widget.winfo_exists():
+            return # Widget is None or has been destroyed
+
+        self.chat_frame._parent_canvas.update_idletasks()
+
+        try:
+            # Ensure widget geometry is up to date
+            widget.update_idletasks()
+
+            canvas_height = self.chat_frame._parent_canvas.winfo_height()
+            widget_y = widget.winfo_y() # Y position of widget within chat_frame
+            widget_h = widget.winfo_height()
+            content_height = self.chat_frame.winfo_height() # Total height of the content within scrollable area
+
+            if content_height <= canvas_height:
+                return # No scroll needed if content is smaller than canvas
+
+            # Desired position: try to bring the widget into the middle of the view
+            # target_y_on_canvas = widget_y - (canvas_height / 2) + (widget_h / 2)
+            # Simplified: scroll to bring the top of the widget into view, with a small margin
+            target_y_on_canvas = widget_y - 10 # 10px margin
+
+            scroll_value = target_y_on_canvas / content_height
+            scroll_value = max(0.0, min(1.0, scroll_value)) # Clamp between 0 and 1
+
+            self.chat_frame._parent_canvas.yview_moveto(scroll_value)
+        except Exception as e:
+            print(f"Error in _scroll_to_widget: {e}")
+
+
     def _scroll_to_bottom(self):
         """Scroll chat to bottom"""
+        # Ensure all pending UI operations are done so scroll is accurate
+        self.chat_frame._parent_canvas.update_idletasks()
         self.after(10, lambda: self.chat_frame._parent_canvas.yview_moveto(1.0))
     
     def _on_enter_key(self, event):
@@ -537,14 +610,21 @@ class OllamaGuiApp(ctk.CTk):
             self.after(0, self._update_status, "Ready")
     
     def _toggle_input(self, enabled):
-        """Toggle input widgets"""
-        # Only disable the send button, never the input box
-        send_state = "normal" if enabled else "disabled"
-        self.send_button.configure(state=send_state)
+        """Toggle input widgets, including the New Chat button."""
+        input_state = "normal" if enabled else "disabled"
+
+        # Send button
+        self.send_button.configure(state=input_state)
+
+        # New Chat button
+        if hasattr(self, 'new_chat_btn'): # Ensure new_chat_btn exists
+            self.new_chat_btn.configure(state=input_state)
         
-        # Always keep the input box enabled and focused
+        # Always keep the input box enabled and focused,
+        # actual sending is blocked by self.is_generating and send_button state.
         self.user_input.configure(state="normal")
-        self.user_input.focus()
+        if enabled: # Only focus if we are enabling input
+            self.user_input.focus()
     
     def _new_chat(self):
         """Start a new chat"""
@@ -556,6 +636,235 @@ class OllamaGuiApp(ctk.CTk):
         
         self._update_status("New chat started")
         self.user_input.focus()
+
+    def _re_grid_chat_widgets(self):
+        """Re-apply grid layout to all direct children of self.chat_frame.
+        This ensures sequential rows and consistent padding, especially when
+        the editing_frame is added or removed.
+        """
+        current_row = 0
+        children_snapshot = list(self.chat_frame.winfo_children()) # Iterate over a copy
+
+        for widget in children_snapshot:
+            if not widget.winfo_exists():
+                continue
+
+            common_padx = 0 # Children span full width due to sticky='ew' in their grid config
+
+            if widget == self.editing_frame and self.editing_frame is not None:
+                # Specific pady for editing_frame for some spacing
+                widget.grid(row=current_row, column=0, sticky="ew", padx=common_padx, pady=(5, 10))
+            else: # Assumed to be a msg_container or other standard chat widget
+                  # Check if it's a CCTkFrame, as msg_container is one. This avoids errors if other non-frame widgets exist.
+                if isinstance(widget, ctk.CTkFrame):
+                    widget.grid(row=current_row, column=0, sticky="ew", padx=common_padx, pady=8) # Standard pady for msg_containers
+                else: # Fallback for other widget types, though not expected as direct children needing re-grid.
+                    widget.grid(row=current_row, column=0, sticky="ew")
+            current_row += 1
+
+        self.after(20, self._scroll_to_bottom) # Ensure layout update is visible and scrolled if needed
+
+
+    def _clear_chat_from_index(self, start_idx):
+        """Remove message containers from the UI from start_idx onwards."""
+        all_msg_containers = self.chat_frame.winfo_children()
+
+        if start_idx < 0:
+            start_idx = 0
+
+        widgets_to_destroy = all_msg_containers[start_idx:]
+
+        for widget in widgets_to_destroy:
+            widget.destroy()
+
+        # After removing widgets, re-grid the remaining ones.
+        self._re_grid_chat_widgets()
+
+
+    def _start_edit(self, msg_idx, edit_button_widget):
+        """Begin editing a user message by showing an editing UI below it."""
+        if self.is_generating:
+            return
+
+        if self.editing_frame: # If another edit is active, cancel it first
+            self._cancel_edit()
+
+        self._toggle_input(False) # Disable main chat input
+
+        try:
+            # edit_button_widget.master is edit_button_container. Its master is target_msg_container.
+            target_msg_container = edit_button_widget.master.master
+            original_content = self.conversation_history[msg_idx]['content']
+        except IndexError:
+            print(f"Error: Message index {msg_idx} out of bounds for editing.")
+            self._toggle_input(True)
+            return
+        except AttributeError: # If widget hierarchy is not as expected
+            print(f"Error: Could not find target_msg_container for editing via button.")
+            self._toggle_input(True)
+            return
+
+        self.active_edit_button = edit_button_widget
+        self.active_edit_button.configure(state="disabled")
+
+        # Create the editing frame
+        self.editing_frame = ctk.CTkFrame(self.chat_frame, fg_color=COLORS['surface'], corner_radius=10)
+
+        edit_textbox = ctk.CTkTextbox(
+            self.editing_frame,
+            font=ctk.CTkFont(size=14),
+            text_color=COLORS['text'],
+            fg_color=COLORS['surface_light'],
+            border_color=COLORS['accent'],
+            border_width=1,
+            wrap="word"
+        )
+        edit_textbox.insert("0.0", original_content)
+        edit_textbox.pack(padx=10, pady=10, fill="x", expand=True)
+        edit_textbox.focus()
+
+        # Calculate required height for textbox (approx based on lines and font size)
+        # This is a rough estimation.
+        text_lines = original_content.count('\n') + 1
+        estimated_height = text_lines * 20 + 30 # 20px per line + padding
+        edit_textbox.configure(height=min(max(80, estimated_height), 200))
+
+
+        # Edit action buttons frame within editing_frame
+        actions_frame = ctk.CTkFrame(self.editing_frame, fg_color="transparent")
+        actions_frame.pack(fill="x", padx=10, pady=(0, 10), anchor="e")
+
+        save_button = ctk.CTkButton(
+            actions_frame,
+            text="✔️",  # Changed Emoji for Save
+            command=lambda: self._save_edit(msg_idx, edit_textbox),
+            width=30, # Adjusted width
+            height=30, # Adjusted height
+            font=None, # Use default font
+            fg_color=COLORS['success']
+        )
+        save_button.pack(side="right", padx=(5,0))
+
+        cancel_button = ctk.CTkButton(
+            actions_frame,
+            text="❌",  # Emoji for Cancel
+            command=self._cancel_edit,
+            width=30, # Adjusted width
+            height=30, # Adjusted height
+            font=None, # Use default font
+            fg_color=COLORS['error']
+        )
+        cancel_button.pack(side="right", padx=(0,5))
+
+        # Place editing_frame (it will be gridded by _re_grid_chat_widgets)
+        # The editing_frame is temporarily gridded here to get its initial size/content rendered.
+        # _re_grid_chat_widgets will then place it correctly among other widgets.
+        # The row msg_idx + 1 is a temporary assignment.
+        self.editing_frame.grid(row=msg_idx + 1, column=0, sticky="ew", padx=0, pady=(5,10))
+
+        # Ensure the column configuration of chat_frame allows expansion for editing_frame
+        self.chat_frame.grid_columnconfigure(0, weight=1)
+
+        self._re_grid_chat_widgets() # Call to fix layout
+        self.after(100, lambda: self._scroll_to_widget(self.editing_frame))
+
+
+    def _save_edit(self, msg_idx, textbox_widget):
+        """Save the edited message, truncate history, and trigger new AI response."""
+        new_text = textbox_widget.get("1.0", "end-1c").strip()
+
+        if not new_text:
+            # Simple cancel if new text is empty. Could also show a small error.
+            self._cancel_edit()
+            return
+
+        # 1. Update conversation_history at msg_idx
+        self.conversation_history[msg_idx]['content'] = new_text
+
+        # 2. Update the original message bubble's label
+        try:
+            # msg_container -> bubble -> message_label
+            msg_container_to_update = self.chat_frame.winfo_children()[msg_idx]
+            bubble_to_update = None
+            message_label_to_update = None
+
+            for child in msg_container_to_update.winfo_children():
+                if isinstance(child, ctk.CTkFrame): # This should be the bubble or edit_button_container
+                    # Check if it's the bubble (has a label as a child, or specific name if we set one)
+                    is_bubble = False
+                    for sub_child in child.winfo_children():
+                        if isinstance(sub_child, ctk.CTkLabel):
+                            is_bubble = True
+                            message_label_to_update = sub_child
+                            break
+                    if is_bubble:
+                        bubble_to_update = child # Found the bubble
+                        break
+
+            if message_label_to_update:
+                message_label_to_update.configure(text=new_text)
+            else:
+                print(f"DEBUG: Could not find message_label in msg_idx {msg_idx} to update text.")
+        except Exception as e:
+            print(f"Error updating message label text: {e}")
+
+
+        # 3. Clean up editing UI
+        if self.editing_frame:
+            self.editing_frame.destroy()
+            self.editing_frame = None
+        if self.active_edit_button:
+            self.active_edit_button.configure(state="normal")
+            self.active_edit_button = None
+
+        # 4. Truncate UI and history AFTER editing UI is gone and original message updated
+        self.conversation_history = self.conversation_history[:msg_idx + 1]
+        # _clear_chat_from_index will call _re_grid_chat_widgets
+        self._clear_chat_from_index(msg_idx + 1)
+
+        # 5. Trigger new AI response
+        # No explicit call to _re_grid_chat_widgets here, as _clear_chat_from_index and subsequent _add_message calls will handle it.
+        if self.model_selector.cget("state") == "disabled":
+            self._update_status("Cannot generate response: No model selected or connection error.")
+            self._toggle_input(True) # Re-enable main input as no AI response will come
+            return
+
+        self.is_generating = True
+        self._toggle_input(False) # Disable main input during generation
+        self._update_status("Generating response...")
+
+        # Add AI message placeholder
+        # Note: _add_message adds a new msg_container at the end of self.chat_frame.winfo_children()
+        ai_label = self._add_message("assistant", "●●●", is_streaming=True)
+
+        # History for AI is the now-truncated self.conversation_history
+        history_for_ai = self.conversation_history.copy()
+
+        threading.Thread(
+            target=self._stream_response,
+            args=(history_for_ai, ai_label), # _stream_response will append AI response to self.conversation_history
+            daemon=True
+        ).start()
+
+        self.after(100, self._scroll_to_bottom)
+
+    # _start_regenerate method removed
+
+    def _cancel_edit(self):
+        """Cancel editing and remove the editing UI."""
+        if self.editing_frame:
+            self.editing_frame.destroy()
+            self.editing_frame = None
+
+        if self.active_edit_button:
+            self.active_edit_button.configure(state="normal")
+            self.active_edit_button = None
+
+        self._re_grid_chat_widgets() # Re-grid after removing editing_frame
+
+        self._toggle_input(True) # Re-enable main input
+        self.after(100, self._scroll_to_bottom) # Scroll to ensure context is reasonable
+
 
 if __name__ == "__main__":
     app = OllamaGuiApp()
